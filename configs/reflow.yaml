@@ -1,4 +1,6 @@
 data:
+  timbre_model_path: /home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/40epoch.pth
+  timbre_model_config: /home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/config.yaml
   f0_extractor: 'rmvpe' # 'parselmouth', 'dio', 'harvest', 'crepe' or 'rmvpe'
   f0_min: 65 # about C2
   f0_max: 800 # about G5

@@ -553,7 +553,7 @@ class Sins(torch.nn.Module):
         }
         self.unit2ctrl = Unit2Control(n_unit, n_spk, split_map)
 
-    def forward(self, units_frames, f0_frames, volume_frames, spk_id=None, spk_mix_dict=None, initial_phase=None, infer=True, max_upsample_dim=32):
+    def forward(self, units_frames, f0_frames, volume_frames, audio_path, spk_mix_dict=None, initial_phase=None, infer=True, max_upsample_dim=32):
         '''
             units_frames: B x n_frames x n_unit
             f0_frames: B x n_frames x 1
@@ -575,7 +575,7 @@ class Sins(torch.nn.Module):
         phase_frames = phase[:, ::self.block_size, :]
         
         # parameter prediction
-        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, spk_id=spk_id, spk_mix_dict=spk_mix_dict)
+        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, spk_mix_dict=spk_mix_dict)
         
         amplitudes_frames = torch.exp(ctrls['amplitudes'])/ 128
         group_delay = np.pi * torch.tanh(ctrls['group_delay'])
@@ -616,7 +616,7 @@ class CombSubSuperFast(torch.nn.Module):
             block_size,
             win_length,
             n_unit=256,
-            n_spk=1,
+            # n_spk=1,
             use_pitch_aug=False,
             pcmer_norm=False):
         super().__init__()
@@ -634,7 +634,7 @@ class CombSubSuperFast(torch.nn.Module):
             'noise_magnitude': win_length // 2 + 1,
             'noise_phase': win_length // 2 + 1
         }
-        self.unit2ctrl = Unit2Control(n_unit, n_spk, split_map, use_pitch_aug=use_pitch_aug, use_naive_v2=True, use_conv_stack=True)
+        self.unit2ctrl = Unit2Control(n_unit, split_map, use_pitch_aug=use_pitch_aug, use_naive_v2=True, use_conv_stack=True)
     
     def fast_source_gen(self, f0_frames):
         n = torch.arange(self.block_size, device=f0_frames.device)
@@ -650,7 +650,7 @@ class CombSubSuperFast(torch.nn.Module):
         phase_frames = 2 * np.pi * rad[:, :, :1]
         return combtooth, phase_frames
         
-    def forward(self, units_frames, f0_frames, volume_frames, spk_id=None, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
+    def forward(self, units_frames, f0_frames, volume_frames, audio_path, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
         '''
             units_frames: B x n_frames x n_unit
             f0_frames: B x n_frames x 1
@@ -661,7 +661,7 @@ class CombSubSuperFast(torch.nn.Module):
         combtooth, phase_frames = self.fast_source_gen(f0_frames)
         
         # parameter prediction
-        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, spk_id=spk_id, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
+        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
         
         src_filter = torch.exp(ctrls['harmonic_magnitude'] + 1.j * np.pi * ctrls['harmonic_phase'])
         src_filter = torch.cat((src_filter, src_filter[:,-1:,:]), 1)
@@ -732,7 +732,7 @@ class CombSubFast(torch.nn.Module):
         }
         self.unit2ctrl = Unit2Control(n_unit, n_spk, split_map, use_pitch_aug=use_pitch_aug, pcmer_norm=pcmer_norm)
 
-    def forward(self, units_frames, f0_frames, volume_frames, spk_id=None, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
+    def forward(self, units_frames, f0_frames, volume_frames, audio_path, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
         '''
             units_frames: B x n_frames x n_unit
             f0_frames: B x n_frames x 1
@@ -753,7 +753,7 @@ class CombSubFast(torch.nn.Module):
         phase_frames = 2 * np.pi * x[:, ::self.block_size, :]
         
         # parameter prediction
-        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, spk_id=spk_id, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
+        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
         
         src_filter = torch.exp(ctrls['harmonic_magnitude'] + 1.j * np.pi * ctrls['harmonic_phase'])
         src_filter = torch.cat((src_filter, src_filter[:,-1:,:]), 1)
@@ -808,7 +808,7 @@ class CombSub(torch.nn.Module):
         }
         self.unit2ctrl = Unit2Control(n_unit, n_spk, split_map)
 
-    def forward(self, units_frames, f0_frames, volume_frames, spk_id=None, spk_mix_dict=None, initial_phase=None, infer=True, **kwargs):
+    def forward(self, units_frames, f0_frames, volume_frames, audio_path, spk_mix_dict=None, initial_phase=None, infer=True, **kwargs):
         '''
             units_frames: B x n_frames x n_unit
             f0_frames: B x n_frames x 1
@@ -829,7 +829,7 @@ class CombSub(torch.nn.Module):
         phase_frames = 2 * np.pi * x[:, ::self.block_size, :]
         
         # parameter prediction
-        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, spk_id=spk_id, spk_mix_dict=spk_mix_dict)
+        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, spk_mix_dict=spk_mix_dict)
         
         group_delay = np.pi * torch.tanh(ctrls['group_delay'])
         src_param = torch.exp(ctrls['harmonic_magnitude'])

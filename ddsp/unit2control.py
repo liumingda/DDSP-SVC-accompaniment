@@ -27,7 +27,7 @@ class Unit2Control(nn.Module):
     def __init__(
             self,
             input_channel,
-            n_spk,
+            # n_spk,
             output_splits,
             use_pitch_aug=False,
             pcmer_norm=False,
@@ -35,12 +35,15 @@ class Unit2Control(nn.Module):
             use_conv_stack=True):
         super().__init__()
         self.output_splits = output_splits
+
+        self.spk_proj = nn.Linear(192, 256)
+
         self.f0_embed = nn.Linear(1, 256)
         self.phase_embed = nn.Linear(1, 256)
         self.volume_embed = nn.Linear(1, 256)
-        self.n_spk = n_spk
-        if n_spk is not None and n_spk > 1:
-            self.spk_embed = nn.Embedding(n_spk, 256)
+        # self.n_spk = n_spk
+        # if n_spk is not None and n_spk > 1:
+        #     self.spk_embed = nn.Embedding(n_spk, 256)
         if use_pitch_aug:
             self.aug_shift_embed = nn.Linear(1, 256, bias=False)
         else:
@@ -81,7 +84,7 @@ class Unit2Control(nn.Module):
         self.dense_out = weight_norm(
             nn.Linear(256, self.n_out))
 
-    def forward(self, units, f0, phase, volume, spk_id = None, spk_mix_dict = None, aug_shift = None):
+    def forward(self, units, f0, phase, volume,  audio_path, spk_mix_dict = None, aug_shift = None):
         
         '''
         input: 
@@ -92,13 +95,23 @@ class Unit2Control(nn.Module):
 
         x = self.stack(units.transpose(1,2)).transpose(1,2)
         x = x + self.f0_embed((1+ f0 / 700).log()) + self.phase_embed(phase / np.pi) + self.volume_embed(volume)
-        if self.n_spk is not None and self.n_spk > 1:
-            if spk_mix_dict is not None:
-                for k, v in spk_mix_dict.items():
-                    spk_id_torch = torch.LongTensor(np.array([[k]])).to(units.device)
-                    x = x + v * self.spk_embed(spk_id_torch - 1)
-            else:
-                x = x + self.spk_embed(spk_id - 1)
+        # print(audio_path.shape)
+
+        audio_path = audio_path.unsqueeze(1).repeat(1, x.shape[1], 1)
+        # print(audio_path.shape)
+        # audio_path = audio_path.expand(-1, x.shape[1], -1)
+        spk_embed = self.spk_proj(audio_path)
+        # print(spk_embed.shape)
+        # print(x.shape)
+
+        x = x + spk_embed #self.spk_proj(audio_path) 
+        # if self.n_spk is not None and self.n_spk > 1:
+        #     if spk_mix_dict is not None:
+        #         for k, v in spk_mix_dict.items():
+        #             spk_id_torch = torch.LongTensor(np.array([[k]])).to(units.device)
+        #             x = x + v * self.spk_embed(spk_id_torch - 1)
+        #     else:
+        #         x = x + self.spk_embed(spk_id - 1)
         if self.aug_shift_embed is not None and aug_shift is not None:
             x = x + self.aug_shift_embed(aug_shift / 5)
         x = self.decoder(x)

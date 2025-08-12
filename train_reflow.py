@@ -5,8 +5,12 @@ from torch.optim import lr_scheduler
 from logger import utils
 from reflow.data_loaders import get_data_loaders
 from reflow.vocoder import Vocoder, Unit2Wav
+import sys
 
-
+# 自动添加项目根目录到 sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))  # 当前文件所在目录: inference/
+project_root = os.path.dirname(current_dir)  # 项目根目录: TCSinger/
+sys.path.append(project_root)
 def parse_args(args=None, namespace=None):
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser()
@@ -39,7 +43,7 @@ if __name__ == '__main__':
                     args.data.block_size,
                     args.model.win_length,
                     args.data.encoder_out_channels, 
-                    args.model.n_spk,
+                    # args.model.n_spk,
                     args.model.use_pitch_aug,
                     vocoder.dimension,
                     args.model.n_layers,

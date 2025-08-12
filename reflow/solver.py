@@ -71,10 +71,12 @@ def test(args, model, vocoder, loader_test, saver):
     
     # run
     with torch.no_grad():
-        for bidx, data in enumerate(loader_test):
+        for bidx, all_data in enumerate(loader_test):
+            data, timbre_data = all_data
             fn = data['name'][0]
+            timbre_fn = timbre_data['name'][0]
             print('--------')
-            print('{}/{} - {}'.format(bidx, num_batches, fn))
+            print('{}/{} - {}/{}'.format(bidx, num_batches, fn, timbre_fn))
 
             # unpack data
             for k in data.keys():
@@ -82,13 +84,18 @@ def test(args, model, vocoder, loader_test, saver):
                     data[k] = data[k].to(args.device)
             print('>>', data['name'][0])
 
+            for k in timbre_data.keys():
+                if not k.startswith('name'):
+                    timbre_data[k] = timbre_data[k].to(args.device)
+            print('>>', timbre_data['name'][0])
+
             # forward
             st_time = time.time()
             mel = model(
                     data['units'], 
                     data['f0'], 
                     data['volume'], 
-                    data['spk_id'],
+                    timbre_data['audio_path'],
                     vocoder=vocoder,
                     infer=True,
                     return_wav=False,
@@ -106,11 +113,11 @@ def test(args, model, vocoder, loader_test, saver):
             rtf_all.append(rtf)
            
             # loss
-            ddsp_loss, reflow_loss = model(
+            ddsp_loss, reflow_loss, _ = model(
                 data['units'], 
                 data['f0'], 
                 data['volume'], 
-                data['spk_id'],
+                timbre_data['audio_path'],
                 vocoder=vocoder,
                 gt_spec=data['mel'],
                 infer=False,
@@ -214,7 +221,9 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
     else:
         raise ValueError(' [x] Unknown amp_dtype: ' + args.train.amp_dtype)
     for epoch in range(start_epoch, args.train.epochs):
-        for batch_idx, data in enumerate(loader_train):
+        for batch_idx, all_data in enumerate(loader_train):
+            # print(all_data)
+            data, timbre_data = all_data
             saver.global_step_increment()
             optimizer.zero_grad()
 
@@ -222,14 +231,17 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
             for k in data.keys():
                 if not k.startswith('name'):
                     data[k] = data[k].to(args.device)
-            
+
+            for k in timbre_data.keys():
+                if not k.startswith('name'):
+                    timbre_data[k] = timbre_data[k].to(args.device)            
             # forward
             if dtype == torch.float32:
-                ddsp_loss, reflow_loss = model(data['units'].float(), data['f0'], data['volume'], data['spk_id'], 
+                ddsp_loss, reflow_loss, loss_timbre_gen = model(data['units'].float(), data['f0'], data['volume'], timbre_data['audio_path'], 
                                 aug_shift=data['aug_shift'], vocoder=vocoder, gt_spec=data['mel'].float(), infer=False, t_start=args.model.t_start)
             else:
                 with autocast(device_type=args.device, dtype=dtype):
-                    ddsp_loss, reflow_loss=model(data['units'], data['f0'], data['volume'], data['spk_id'], 
+                    ddsp_loss, reflow_loss, loss_timbre_gen=model(data['units'], data['f0'], data['volume'], timbre_data['audio_path'], 
                                     aug_shift=data['aug_shift'], vocoder=vocoder, gt_spec=data['mel'].float(), infer=False, t_start=args.model.t_start)
             
             # handle nan loss
@@ -238,7 +250,7 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
             elif torch.isnan(reflow_loss):
                 raise ValueError(' [x] nan reflow_loss ')
             else:
-                loss = args.train.lambda_ddsp * ddsp_loss + reflow_loss
+                loss = args.train.lambda_ddsp * ddsp_loss + reflow_loss + loss_timbre_gen
                 # backpropagate
                 if dtype == torch.float32:
                     loss.backward()
@@ -253,7 +265,7 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
             if saver.global_step % args.train.interval_log == 0:
                 current_lr =  optimizer.param_groups[0]['lr']
                 saver.log_info(
-                    'epoch: {} | {:3d}/{:3d} | {} | batch/s: {:.2f} | lr: {:.6} | loss: {:.3f} | time: {} | step: {}'.format(
+                    'epoch: {} | {:3d}/{:3d} | {} | batch/s: {:.2f} | lr: {:.6} | loss: {:.3f} |ddsp_loss: {:.3f} |reflow_loss: {:.3f} |SIM_loss: {:.3f} | time: {} | step: {}'.format(
                         epoch,
                         batch_idx,
                         num_batches,
@@ -261,6 +273,9 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
                         args.train.interval_log/saver.get_interval_time(),
                         current_lr,
                         loss.item(),
+                        ddsp_loss.item(),
+                        reflow_loss.item(),
+                        loss_timbre_gen.item(),
                         saver.get_total_time(),
                         saver.global_step
                     )
@@ -270,6 +285,7 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
                     'train/loss': loss.item(),
                     'train/ddsp_loss': ddsp_loss.item(),
                     'train/reflow_loss': reflow_loss.item(),
+                    'train/SIM_loss': loss_timbre_gen.item(),
                     'train/lr': current_lr
                 })
             

@@ -13,6 +13,8 @@ from ddsp.vocoder import load_model, F0_Extractor, Volume_Extractor, Units_Encod
 from ddsp.core import upsample
 from reflow.vocoder import load_model_vocoder
 from tqdm import tqdm
+from speaker_embedding.espnet.espnet2.bin.spk_inference import Speech2Embedding
+import torchaudio
 
 def check_args(ddsp_args, diff_args):
     if ddsp_args.data.sampling_rate != diff_args.data.sampling_rate:
@@ -57,22 +59,30 @@ def parse_args(args=None, namespace=None):
         required=True,
         help="path to the output audio file",
     )
+    # parser.add_argument(
+    #     "-id",
+    #     "--spk_id",
+    #     type=str,
+    #     required=False,
+    #     default=1,
+    #     help="speaker id (for multi-speaker model) | default: 1",
+    # )
     parser.add_argument(
-        "-id",
-        "--spk_id",
+        "-tw",
+        "--target_wav_path",
         type=str,
-        required=False,
-        default=1,
-        help="speaker id (for multi-speaker model) | default: 1",
+        required=True,
+        # default=1,
+        # help="speaker id (for multi-speaker model) | default: 1",
     )
-    parser.add_argument(
-        "-mix",
-        "--spk_mix_dict",
-        type=str,
-        required=False,
-        default="None",
-        help="mix-speaker dictionary (for multi-speaker model) | default: None",
-    )
+    # parser.add_argument(
+    #     "-mix",
+    #     "--spk_mix_dict",
+    #     type=str,
+    #     required=False,
+    #     default="None",
+    #     help="mix-speaker dictionary (for multi-speaker model) | default: None",
+    # )
     parser.add_argument(
         "-k",
         "--key",
@@ -259,12 +269,22 @@ if __name__ == '__main__':
                         device = device)
                             
     # speaker id or mix-speaker dictionary
-    spk_mix_dict = literal_eval(cmd.spk_mix_dict)
-    spk_id = torch.LongTensor(np.array([[int(cmd.spk_id)]])).to(device)
-    if spk_mix_dict is not None:
-        print('Mix-speaker mode')
-    else:
-        print('Speaker ID: '+ str(int(cmd.spk_id)))
+    # spk_mix_dict = literal_eval(cmd.spk_mix_dict)
+    print(cmd.target_wav_path)
+    target_singer, _ = torchaudio.load(cmd.target_wav_path)
+    # print(target_singer[0])
+    # print(target_singer[0].shape)
+    # target_singer = torch.FloatTensor(target_singer)
+    # print(type(target_singer_wav))
+    
+    speech2spk_embed = Speech2Embedding(model_file="/home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/40epoch.pth", train_config="/home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/config.yaml")
+    audio_path = speech2spk_embed(target_singer[0])
+
+
+    # if spk_mix_dict is not None:
+    #     print('Mix-speaker mode')
+    # else:
+    #     print('Speaker ID: '+ str(int(cmd.spk_id)))
     
     # sampling method    
     if cmd.method == 'auto':
@@ -314,8 +334,9 @@ if __name__ == '__main__':
                     seg_units, 
                     seg_f0, 
                     seg_volume, 
-                    spk_id = spk_id, 
-                    spk_mix_dict = spk_mix_dict,
+                    audio_path,
+                    # spk_id = spk_id, 
+                    # spk_mix_dict = spk_mix_dict,
                     aug_shift = formant_shift_key,
                     vocoder=vocoder,
                     infer=True,

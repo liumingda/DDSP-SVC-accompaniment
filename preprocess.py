@@ -10,6 +10,7 @@ import shutil
 from logger import utils
 from tqdm import tqdm
 from ddsp.vocoder import F0_Extractor, Volume_Extractor, Units_Encoder
+from speaker_embedding.espnet.espnet2.bin.spk_inference import Speech2Embedding
 from diffusion.vocoder import Vocoder
 from logger.utils import traverse_dir
 import concurrent.futures
@@ -32,7 +33,7 @@ def parse_args(args=None, namespace=None):
         help="cpu or cuda, auto if not set")
     return parser.parse_args(args=args, namespace=namespace)
     
-def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, device = 'cuda', use_pitch_aug = False, extensions = ['wav']):
+def preprocess(path, f0_extractor, volume_extractor, timbre_exactor, mel_extractor, units_encoder, sample_rate, hop_size, device = 'cuda', use_pitch_aug = False, extensions = ['wav']):
     
     path_srcdir  = os.path.join(path, 'audio')
     path_unitsdir  = os.path.join(path, 'units')
@@ -42,6 +43,7 @@ def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encode
     path_meldir  = os.path.join(path, 'mel')
     path_augmeldir  = os.path.join(path, 'aug_mel')
     path_skipdir = os.path.join(path, 'skip')
+    path_timbredir = os.path.join(path, 'timbre')
     
     # list files
     filelist =  traverse_dir(
@@ -65,6 +67,7 @@ def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encode
         path_melfile = os.path.join(path_meldir, binfile)
         path_augmelfile = os.path.join(path_augmeldir, binfile)
         path_skipfile = os.path.join(path_skipdir, file)
+        path_timbrefile = os.path.join(path_timbredir, file+'.timbre.npy')
         
         # load audio
         audio, _ = librosa.load(path_srcfile, sr=sample_rate)
@@ -99,13 +102,16 @@ def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encode
         
         # extract f0
         f0 = f0_extractor.extract(audio, uv_interp = False)
+        timbre = timbre_exactor(audio).squeeze().to('cpu').numpy()
         
         uv = f0 == 0
         if len(f0[~uv]) > 0:
             # interpolate the unvoiced f0
             f0[uv] = np.interp(np.where(uv)[0], np.where(~uv)[0], f0[~uv])
 
-            # save npy     
+            # save npy    
+            os.makedirs(os.path.dirname(path_timbrefile), exist_ok=True)
+            np.save(path_timbrefile, timbre) 
             os.makedirs(os.path.dirname(path_unitsfile), exist_ok=True)
             np.save(path_unitsfile, units)
             os.makedirs(os.path.dirname(path_f0file), exist_ok=True)
@@ -165,6 +171,9 @@ if __name__ == '__main__':
     
     # initialize volume extractor
     volume_extractor = Volume_Extractor(args.data.block_size)
+    print(args.data.timbre_model_path)
+    # initialize timbre extractor
+    timbre_exactor = Speech2Embedding(model_file=args.data.timbre_model_path, train_config=args.data.timbre_model_config) 
     
     # initialize mel extractor
     mel_extractor = None
@@ -191,8 +200,8 @@ if __name__ == '__main__':
                         device = device)    
     
     # preprocess training set
-    preprocess(args.data.train_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions)
+    preprocess(args.data.train_path, f0_extractor, volume_extractor, timbre_exactor, mel_extractor, units_encoder, sample_rate, hop_size, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions)
     
     # preprocess validation set
-    preprocess(args.data.valid_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, device = device, use_pitch_aug = False, extensions = extensions)
+    preprocess(args.data.valid_path, f0_extractor, volume_extractor, timbre_exactor, mel_extractor, units_encoder, sample_rate, hop_size, device = device, use_pitch_aug = False, extensions = extensions)
     

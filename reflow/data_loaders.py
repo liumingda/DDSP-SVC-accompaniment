@@ -8,6 +8,8 @@ import random
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
+# from spk_embedding_model_data_preprocessing.espnet.espnet2.bin.spk_inference import Speech2Embedding
+
 def traverse_dir(
         root_dir,
         extensions,
@@ -58,7 +60,7 @@ def get_data_loaders(args, whole_audio=False):
         load_all_data=args.train.cache_all_data,
         whole_audio=whole_audio,
         extensions=args.data.extensions,
-        n_spk=args.model.n_spk,
+        # n_spk=args.model.n_spk,
         device=args.train.cache_device,
         fp16=args.train.cache_fp16,
         use_aug=True)
@@ -78,7 +80,8 @@ def get_data_loaders(args, whole_audio=False):
         load_all_data=args.train.cache_all_data,
         whole_audio=True,
         extensions=args.data.extensions,
-        n_spk=args.model.n_spk)
+        # n_spk=args.model.n_spk
+        )
     loader_valid = torch.utils.data.DataLoader(
         data_valid,
         batch_size=1,
@@ -99,7 +102,7 @@ class AudioDataset(Dataset):
         load_all_data=True,
         whole_audio=False,
         extensions=['wav'],
-        n_spk=1,
+        # n_spk=2,
         device='cpu',
         fp16=False,
         use_aug=False,
@@ -121,18 +124,44 @@ class AudioDataset(Dataset):
         self.use_aug = use_aug
         self.data_buffer={}
         self.pitch_aug_dict = np.load(os.path.join(self.path_root, 'pitch_aug_dict.npy'), allow_pickle=True).item()
+
+        self.timbre_data_buffer={}
+
         if load_all_data:
             print('Load all the data from :', path_root)
         else:
             print('Load the f0, volume data from :', path_root)
+
+        # speech2spk_embed = Speech2Embedding(model_file="/home/ma-user/modelarts/user-job-dir/ddsp-svc_0321/spk_embedding_model_data_preprocessing/40epoch.pth", train_config="/home/ma-user/modelarts/user-job-dir/ddsp-svc_0321/spk_embedding_model_data_preprocessing/config.yaml")
+
         for name_ext in tqdm(self.paths, total=len(self.paths)):
+            # print(name_ext)
+            # print(name_ext)
+
+
             name = os.path.splitext(name_ext)[0]
+            # print(name)
             path_audio = os.path.join(self.path_root, 'audio', name_ext)
+            # print(path_audio)
             duration = librosa.get_duration(filename = path_audio, sr = self.sample_rate)
+
+            # wav, _ = librosa.load(path_audio, sr=sample_rate)
+            # waveform_audio_path = torch.FloatTensor(wav)
+            # audio_path = speech2spk_embed(waveform_audio_path).to("cpu")
+
+            path_timbre = os.path.join(self.path_root, 'timbre', name_ext) + '.timbre.npy'
+            audio_path = np.load(path_timbre)
+            audio_path = torch.from_numpy(audio_path).float().to(device)
+
+            # print(audio_path.shape)
+            # tt
             
             path_f0 = os.path.join(self.path_root, 'f0', name_ext) + '.npy'
+            # print(path_f0)
+            # tt
             f0 = np.load(path_f0)
             f0 = torch.from_numpy(f0).float().unsqueeze(-1).to(device)
+
                 
             path_volume = os.path.join(self.path_root, 'volume', name_ext) + '.npy'
             volume = np.load(path_volume)
@@ -142,14 +171,6 @@ class AudioDataset(Dataset):
             aug_vol = np.load(path_augvol)
             aug_vol = torch.from_numpy(aug_vol).float().unsqueeze(-1).to(device)
                         
-            if n_spk is not None and n_spk > 1:
-                dirname_split = re.split(r"_|\-", os.path.dirname(name_ext), 2)[0]
-                spk_id = int(dirname_split) if str.isdigit(dirname_split) else 0
-                if spk_id < 1 or spk_id > n_spk:
-                    raise ValueError(' [x] Muiti-speaker traing error : spk_id must be a positive integer from 1 to n_spk ')
-            else:
-                spk_id = 1
-            spk_id = torch.LongTensor(np.array([spk_id])).to(device)
 
             if load_all_data:
                 '''
@@ -183,7 +204,8 @@ class AudioDataset(Dataset):
                         'f0': f0,
                         'volume': volume,
                         'aug_vol': aug_vol,
-                        'spk_id': spk_id
+                        'audio_path': audio_path
+                        # 'spk_id': spk_id
                         }
             else:
                 self.data_buffer[name_ext] = {
@@ -191,21 +213,41 @@ class AudioDataset(Dataset):
                         'f0': f0,
                         'volume': volume,
                         'aug_vol': aug_vol,
-                        'spk_id': spk_id
+                        'audio_path': audio_path
+                        # 'spk_id': spk_id
                         }
            
+        for name_ext in tqdm(self.paths, total=len(self.paths)):
+            path_audio = os.path.join(self.path_root, 'audio', name_ext)
+            # print(path_audio)
+            duration = librosa.get_duration(filename = path_audio, sr = self.sample_rate)
+
+            path_timbre = os.path.join(self.path_root, 'timbre', name_ext) + '.timbre.npy'
+            audio_path = np.load(path_timbre)
+            audio_path = torch.from_numpy(audio_path).float().to(device)                      
+                    
+            self.timbre_data_buffer[name_ext] = {
+                    'duration': duration,
+                    'audio_path': audio_path
+                    }
+
 
     def __getitem__(self, file_idx):
         name_ext = self.paths[file_idx]
         data_buffer = self.data_buffer[name_ext]
+
+        timbre_name_ext = random.choice([name for name in self.paths if name != self.paths[file_idx]])
+
+        timbre_data_buffer = self.timbre_data_buffer[timbre_name_ext]
         # check duration. if too short, then skip
         if data_buffer['duration'] < (self.waveform_sec + 0.1):
             return self.__getitem__( (file_idx + 1) % len(self.paths))
-            
+        if timbre_data_buffer['duration'] < (self.waveform_sec + 0.1):
+            return self.__getitem__( (file_idx + 1) % len(self.paths))            
         # get item
-        return self.get_data(name_ext, data_buffer)
+        return self.get_data(name_ext, data_buffer, timbre_name_ext, timbre_data_buffer)
 
-    def get_data(self, name_ext, data_buffer):
+    def get_data(self, name_ext, data_buffer, timbre_name_ext, timbre_data_buffer):
         name = os.path.splitext(name_ext)[0]
         frame_resolution = self.hop_size / self.sample_rate
         duration = data_buffer['duration']
@@ -216,23 +258,7 @@ class AudioDataset(Dataset):
         start_frame = int(idx_from / frame_resolution)
         units_frame_len = int(waveform_sec / frame_resolution)
         aug_flag = random.choice([True, False]) and self.use_aug
-        '''
-        audio = data_buffer.get('audio')
-        if audio is None:
-            path_audio = os.path.join(self.path_root, 'audio', name) + '.wav'
-            audio, sr = librosa.load(
-                    path_audio, 
-                    sr = self.sample_rate, 
-                    offset = start_frame * frame_resolution,
-                    duration = waveform_sec)
-            if len(audio.shape) > 1:
-                audio = librosa.to_mono(audio)
-            # clip audio into N seconds
-            audio = audio[ : audio.shape[-1] // self.hop_size * self.hop_size]       
-            audio = torch.from_numpy(audio).float()
-        else:
-            audio = audio[start_frame * self.hop_size : (start_frame + units_frame_len) * self.hop_size]
-        '''
+
         # load mel
         mel_key = 'aug_mel' if aug_flag else 'mel'
         mel = data_buffer.get(mel_key)
@@ -266,13 +292,24 @@ class AudioDataset(Dataset):
         volume = data_buffer.get(vol_key)
         volume_frames = volume[start_frame : start_frame + units_frame_len]
         
-        # load spk_id
-        spk_id = data_buffer.get('spk_id')
+        # # load spk_id
+        # spk_id = data_buffer.get('spk_id')
+        audio_path = data_buffer.get('audio_path')
         
         # load shift
         aug_shift = torch.from_numpy(np.array([[aug_shift]])).float()
+
+        content_dict = dict(mel=mel, f0=f0_frames, volume=volume_frames, units=units, audio_path=audio_path, aug_shift=aug_shift, name=name, name_ext=name_ext)
         
-        return dict(mel=mel, f0=f0_frames, volume=volume_frames, units=units, spk_id=spk_id, aug_shift=aug_shift, name=name, name_ext=name_ext)
+        ############# timbre #############
+
+        timbre_name = os.path.splitext(timbre_name_ext)[0]
+
+        timbre_audio_path = timbre_data_buffer.get('audio_path')
+
+        timbre_dict = dict(audio_path=timbre_audio_path, name=timbre_name, name_ext=timbre_name_ext)
+        
+        return content_dict, timbre_dict
 
     def __len__(self):
         return len(self.paths)
