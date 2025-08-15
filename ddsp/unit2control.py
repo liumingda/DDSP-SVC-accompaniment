@@ -48,7 +48,13 @@ class Unit2Control(nn.Module):
             self.aug_shift_embed = nn.Linear(1, 256, bias=False)
         else:
             self.aug_shift_embed = None
-            
+
+        self.accom_stack = nn.Sequential(
+                    nn.Conv1d(128, 256, 3, 1, 1),
+                    nn.GroupNorm(4, 256),
+                    nn.LeakyReLU(),
+                    nn.Conv1d(256, 256, 3, 1, 1))
+
         if use_conv_stack:
             self.stack = nn.Sequential(
                     nn.Conv1d(input_channel, 256, 3, 1, 1),
@@ -84,7 +90,7 @@ class Unit2Control(nn.Module):
         self.dense_out = weight_norm(
             nn.Linear(256, self.n_out))
 
-    def forward(self, units, f0, phase, volume,  audio_path, spk_mix_dict = None, aug_shift = None):
+    def forward(self, units, f0, phase, volume,  audio_path, accompany_mel, spk_mix_dict = None, aug_shift = None):
         
         '''
         input: 
@@ -92,9 +98,12 @@ class Unit2Control(nn.Module):
         return: 
             dict of B x n_frames x feat
         '''
-
+        # print(accompany_mel.shape)
+        # print(accompany_mel.dtype)
+        # print(units.dtype)
         x = self.stack(units.transpose(1,2)).transpose(1,2)
-        x = x + self.f0_embed((1+ f0 / 700).log()) + self.phase_embed(phase / np.pi) + self.volume_embed(volume)
+        y = self.accom_stack(accompany_mel.float().transpose(1,2)).transpose(1,2)
+        x = x + y + self.f0_embed((1+ f0 / 700).log()) + self.phase_embed(phase / np.pi) + self.volume_embed(volume)
         # print(audio_path.shape)
 
         audio_path = audio_path.unsqueeze(1).repeat(1, x.shape[1], 1)

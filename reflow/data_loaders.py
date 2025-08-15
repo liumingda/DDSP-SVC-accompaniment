@@ -190,17 +190,23 @@ class AudioDataset(Dataset):
                 path_units = os.path.join(self.path_root, 'units', name_ext) + '.npy'
                 units = np.load(path_units)
                 units = torch.from_numpy(units).to(device)
+
+                audio_accompany_path_mel = os.path.join(self.path_root, 'audio_accompany_mel', name_ext) + '.npy'
+                accompany_mel = np.load(audio_accompany_path_mel)
+                accompany_mel = torch.from_numpy(accompany_mel).to(device)
                 
                 if fp16:
                     mel = mel.half()
                     aug_mel = aug_mel.half()
                     units = units.half()
+                    accompany_mel = accompany_mel.half()
                     
                 self.data_buffer[name_ext] = {
                         'duration': duration,
                         'mel': mel,
                         'aug_mel': aug_mel,
                         'units': units,
+                        'accompany_mel': accompany_mel,
                         'f0': f0,
                         'volume': volume,
                         'aug_vol': aug_vol,
@@ -269,7 +275,17 @@ class AudioDataset(Dataset):
             mel = torch.from_numpy(mel).float() 
         else:
             mel = mel[start_frame : start_frame + units_frame_len]
-            
+
+        # load accompany mel
+        accompany_mel = data_buffer.get('accompany_mel')
+        if accompany_mel is None:
+            accompany_mel = os.path.join(self.path_root, 'audio_accompany_mel', name_ext) + '.npy'
+            accompany_mel = np.load(accompany_mel)
+            accompany_mel = accompany_mel[start_frame : start_frame + units_frame_len]
+            accompany_mel = torch.from_numpy(accompany_mel).float() 
+        else:
+            accompany_mel = accompany_mel[start_frame : start_frame + units_frame_len]
+
         # load units
         units = data_buffer.get('units')
         if units is None:
@@ -299,7 +315,7 @@ class AudioDataset(Dataset):
         # load shift
         aug_shift = torch.from_numpy(np.array([[aug_shift]])).float()
 
-        content_dict = dict(mel=mel, f0=f0_frames, volume=volume_frames, units=units, audio_path=audio_path, aug_shift=aug_shift, name=name, name_ext=name_ext)
+        content_dict = dict(mel=mel, f0=f0_frames, volume=volume_frames, units=units, accompany_mel=accompany_mel, audio_path=audio_path, aug_shift=aug_shift, name=name, name_ext=name_ext)
         
         ############# timbre #############
 

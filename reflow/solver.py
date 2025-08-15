@@ -96,6 +96,7 @@ def test(args, model, vocoder, loader_test, saver):
                     data['f0'], 
                     data['volume'], 
                     timbre_data['audio_path'],
+                    data['accompany_mel'], 
                     vocoder=vocoder,
                     infer=True,
                     return_wav=False,
@@ -118,6 +119,7 @@ def test(args, model, vocoder, loader_test, saver):
                 data['f0'], 
                 data['volume'], 
                 timbre_data['audio_path'],
+                data['accompany_mel'], 
                 vocoder=vocoder,
                 gt_spec=data['mel'],
                 infer=False,
@@ -237,11 +239,11 @@ def train(args, initial_global_step, model, optimizer, scheduler, vocoder, loade
                     timbre_data[k] = timbre_data[k].to(args.device)            
             # forward
             if dtype == torch.float32:
-                ddsp_loss, reflow_loss, loss_timbre_gen = model(data['units'].float(), data['f0'], data['volume'], timbre_data['audio_path'], 
+                ddsp_loss, reflow_loss, loss_timbre_gen = model(data['units'].float(), data['f0'], data['volume'], timbre_data['audio_path'], data['accompany_mel'],
                                 aug_shift=data['aug_shift'], vocoder=vocoder, gt_spec=data['mel'].float(), infer=False, t_start=args.model.t_start)
             else:
                 with autocast(device_type=args.device, dtype=dtype):
-                    ddsp_loss, reflow_loss, loss_timbre_gen=model(data['units'], data['f0'], data['volume'], timbre_data['audio_path'], 
+                    ddsp_loss, reflow_loss, loss_timbre_gen=model(data['units'], data['f0'], data['volume'], timbre_data['audio_path'], data['accompany_mel'],
                                     aug_shift=data['aug_shift'], vocoder=vocoder, gt_spec=data['mel'].float(), infer=False, t_start=args.model.t_start)
             
             # handle nan loss

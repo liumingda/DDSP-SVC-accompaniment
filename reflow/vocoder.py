@@ -9,7 +9,7 @@ from nsf_hifigan.models import load_model,load_config
 from torchaudio.transforms import Resample
 from .reflow import RectifiedFlow
 from .naive_v2_diff import NaiveV2Diff
-from ddsp.vocoder import CombSubSuperFast
+from ddsp.vocoder_copy_test import CombSubSuperFast
 # import sys
 
 # # 自动添加项目根目录到 sys.path
@@ -189,7 +189,7 @@ class Unit2Wav(nn.Module):
         self.reflow_model = RectifiedFlow(NaiveV2Diff(mel_channels=out_dims, dim=n_chans, num_layers=n_layers, condition_dim=out_dims, use_mlp=False), out_dims=out_dims)
         self.speech2spk_embed = Speech2Embedding(model_file="/home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/40epoch.pth", train_config="/home/liumingda/Documents/speech_singing/SVC/code/DDSP-SVC/espnet_model/config.yaml")
 
-    def forward(self, units, f0, volume, audio_path, spk_mix_dict=None, aug_shift=None, vocoder=None,
+    def forward(self, units, f0, volume, audio_path, accompany_mel, spk_mix_dict=None, aug_shift=None, vocoder=None,
                 gt_spec=None, infer=True, return_wav=False, infer_step=10, method='euler', t_start=0.0, 
                 silence_front=0, use_tqdm=True):
         
@@ -199,7 +199,7 @@ class Unit2Wav(nn.Module):
         return: 
             dict of B x n_frames x feat
         '''
-        ddsp_wav, hidden, (_, _) = self.ddsp_model(units, f0, volume, audio_path, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift, infer=infer)
+        ddsp_wav, hidden, (_, _) = self.ddsp_model(units, f0, volume, audio_path, accompany_mel, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift, infer=infer)
         start_frame = int(silence_front * self.sampling_rate / self.block_size)
         if vocoder is not None:
             ddsp_mel = vocoder.extract(ddsp_wav[:, start_frame * self.block_size:])

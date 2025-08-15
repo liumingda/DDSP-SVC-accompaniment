@@ -45,6 +45,11 @@ def preprocess(path, f0_extractor, volume_extractor, timbre_exactor, mel_extract
     path_skipdir = os.path.join(path, 'skip')
     path_timbredir = os.path.join(path, 'timbre')
     
+    path_accom_srcdir  = os.path.join(path, 'audio_accompany')
+    path_voal_accom_srcdir  = os.path.join(path, 'audio_raw')
+
+    path_accompany_meldir = os.path.join(path, 'audio_accompany_mel')
+
     # list files
     filelist =  traverse_dir(
         path_srcdir,
@@ -64,35 +69,63 @@ def preprocess(path, f0_extractor, volume_extractor, timbre_exactor, mel_extract
         path_f0file = os.path.join(path_f0dir, binfile)
         path_volumefile = os.path.join(path_volumedir, binfile)
         path_augvolfile = os.path.join(path_augvoldir, binfile)
+
         path_melfile = os.path.join(path_meldir, binfile)
         path_augmelfile = os.path.join(path_augmeldir, binfile)
+
+        path_accompany_melfile = os.path.join(path_accompany_meldir, binfile)
+
         path_skipfile = os.path.join(path_skipdir, file)
-        path_timbrefile = os.path.join(path_timbredir, file+'.timbre.npy')
+        path_timbrefile = os.path.join(path_timbredir, file +'.timbre.npy')
+
+        path_raw = os.path.join(path_voal_accom_srcdir, file)
+        path_accompany = os.path.join(path_accom_srcdir, file)
         
-        # load audio
+        # load vocal audio
         audio, _ = librosa.load(path_srcfile, sr=sample_rate)
         if len(audio.shape) > 1:
             audio = librosa.to_mono(audio)
         audio_t = torch.from_numpy(audio).float().to(device)
         audio_t = audio_t.unsqueeze(0)
-        
+
+        # load raw audio
+        audio_raw, _ = librosa.load(path_raw, sr=sample_rate)
+        if len(audio_raw.shape) > 1:
+            audio_raw = librosa.to_mono(audio_raw)
+        audio_t_raw = torch.from_numpy(audio_raw).float().to(device)
+        audio_t_raw = audio_t_raw.unsqueeze(0)
+
+        # load accompany audio
+        audio_accompany, _ = librosa.load(path_accompany, sr=sample_rate)
+        if len(audio_accompany.shape) > 1:
+            audio_accompany = librosa.to_mono(audio_accompany)
+        audio_t_accompany = torch.from_numpy(audio_accompany).float().to(device)
+        audio_t_accompany = audio_t_accompany.unsqueeze(0)  
+
         # extract volume
         volume = volume_extractor.extract(audio)
         
         # extract mel and volume augmentaion
         if mel_extractor is not None:
-            mel_t = mel_extractor.extract(audio_t, sample_rate)
+            mel_t_accompany = mel_extractor.extract(audio_t_accompany, sample_rate)
+            mel_accompany = mel_t_accompany.squeeze().to('cpu').numpy()
+
+            mel_t = mel_extractor.extract(audio_t_raw, sample_rate)
             mel = mel_t.squeeze().to('cpu').numpy()
             
             max_amp = float(torch.max(torch.abs(audio_t))) + 1e-5
             max_shift = min(1, np.log10(1/max_amp))
             log10_vol_shift = random.uniform(-1, max_shift)
+
+            max_amp_raw = float(torch.max(torch.abs(audio_t_raw))) + 1e-5
+            max_shift_raw = min(1, np.log10(1/max_amp_raw))
+            log10_vol_shift_raw = random.uniform(-1, max_shift_raw)
             if use_pitch_aug:
                 keyshift = random.uniform(-5, 5)
             else:
                 keyshift = 0
             
-            aug_mel_t = mel_extractor.extract(audio_t * (10 ** log10_vol_shift), sample_rate, keyshift = keyshift)
+            aug_mel_t = mel_extractor.extract(audio_t_raw * (10 ** log10_vol_shift_raw), sample_rate, keyshift = keyshift)
             aug_mel = aug_mel_t.squeeze().to('cpu').numpy()
             aug_vol = volume_extractor.extract(audio * (10 ** log10_vol_shift))
             
@@ -120,6 +153,8 @@ def preprocess(path, f0_extractor, volume_extractor, timbre_exactor, mel_extract
             np.save(path_volumefile, volume)
             if mel_extractor is not None:
                 pitch_aug_dict[file] = keyshift
+                os.makedirs(os.path.dirname(path_accompany_melfile), exist_ok=True)
+                np.save(path_accompany_melfile, mel_accompany)
                 os.makedirs(os.path.dirname(path_melfile), exist_ok=True)
                 np.save(path_melfile, mel)
                 os.makedirs(os.path.dirname(path_augmelfile), exist_ok=True)
@@ -135,6 +170,7 @@ def preprocess(path, f0_extractor, volume_extractor, timbre_exactor, mel_extract
     
     # single process
     for file in tqdm(filelist, total=len(filelist)):
+        # print(file)
         process(file)
     
     if mel_extractor is not None:

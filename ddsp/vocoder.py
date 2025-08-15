@@ -12,7 +12,7 @@ from fairseq import checkpoint_utils
 from encoder.hubert.model import HubertSoft
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
 from torchaudio.transforms import Resample
-from .unit2control import Unit2Control
+from .unit2control_copy_test import Unit2Control
 from .core import frequency_filter, upsample, remove_above_fmax, MaskedAvgPool1d, MedianPool1d
 import time
 
@@ -650,7 +650,7 @@ class CombSubSuperFast(torch.nn.Module):
         phase_frames = 2 * np.pi * rad[:, :, :1]
         return combtooth, phase_frames
         
-    def forward(self, units_frames, f0_frames, volume_frames, audio_path, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
+    def forward(self, units_frames, f0_frames, volume_frames, audio_path, accompany_mel, spk_mix_dict=None, aug_shift=None, initial_phase=None, infer=True, **kwargs):
         '''
             units_frames: B x n_frames x n_unit
             f0_frames: B x n_frames x 1
@@ -661,7 +661,7 @@ class CombSubSuperFast(torch.nn.Module):
         combtooth, phase_frames = self.fast_source_gen(f0_frames)
         
         # parameter prediction
-        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
+        ctrls, hidden = self.unit2ctrl(units_frames, f0_frames, phase_frames, volume_frames, audio_path, accompany_mel, spk_mix_dict=spk_mix_dict, aug_shift=aug_shift)
         
         src_filter = torch.exp(ctrls['harmonic_magnitude'] + 1.j * np.pi * ctrls['harmonic_phase'])
         src_filter = torch.cat((src_filter, src_filter[:,-1:,:]), 1)
